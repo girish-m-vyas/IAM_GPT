@@ -14,7 +14,7 @@
 
 **IAMGPT** is a no-code AI agent built specifically for **Identity and Access Management (IAM) professionals, students, and IT teams**. It helps you learn, automate, and troubleshoot IAM tasks through a simple chat interface — no programming required.
 
-Powered by **Groq AI (Llama 3.3 70B)** — completely free, no credit card needed.
+Powered by **Groq AI (Openai/gpt-oss-20b)** — completely free, no credit card needed.
 
 ---
 
@@ -130,7 +130,7 @@ Deploy on **[Render.com](https://render.com)** to get a public URL:
 | Layer | Technology |
 |-------|-----------|
 | Backend | Node.js + Express |
-| AI Model | Llama 3.3 70B via Groq API |
+| AI Model | Openai/gpt-oss-20b via Groq API |
 | Frontend | Vanilla HTML/CSS/JavaScript |
 | Design | Dark Navy + Cyan Terminal Theme |
 | Deployment | Render.com (Free tier) |
