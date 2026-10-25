@@ -1,0 +1,497 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>IAMGPT — IAM AI Agent</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600&family=Sora:wght@400;600;700&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-deep:    #060e17;
+      --bg-main:    #0D1B2A;
+      --bg-card:    rgba(13,27,42,0.85);
+      --bg-sidebar: rgba(6,14,23,0.75);
+      --cyan:       #00C2E0;
+      --cyan-dim:   rgba(0,194,224,0.15);
+      --cyan-faint: rgba(0,194,224,0.06);
+      --border:     rgba(0,194,224,0.15);
+      --border-mid: rgba(30,77,107,0.45);
+      --text-main:  #d0e8f5;
+      --text-muted: #4a8fa8;
+      --text-dim:   #2a5a72;
+    }
+
+    html, body {
+      height: 100%;
+      font-family: 'JetBrains Mono', 'Fira Code', monospace;
+      background: linear-gradient(135deg, #060e17 0%, #0D1B2A 50%, #091520 100%);
+      color: var(--text-main);
+      overflow: hidden;
+    }
+
+    /* Scanline + Grid */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; pointer-events: none; z-index: 0;
+      background-image:
+        repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.04) 2px, rgba(0,0,0,0.04) 4px),
+        linear-gradient(rgba(0,194,224,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,194,224,0.025) 1px, transparent 1px);
+      background-size: 100% 100%, 48px 48px, 48px 48px;
+    }
+
+    #app { position: relative; z-index: 1; display: flex; flex-direction: column; height: 100vh; }
+
+    /* ---- HEADER ---- */
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 20px;
+      background: rgba(6,14,23,0.92);
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(16px);
+      flex-shrink: 0;
+    }
+    .header-left { display: flex; align-items: center; gap: 12px; }
+    .logo-icon {
+      width: 38px; height: 38px; border-radius: 10px;
+      background: linear-gradient(135deg, #00C2E0, #0055a4);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px; box-shadow: 0 0 16px rgba(0,194,224,0.35);
+      animation: glow 3s ease-in-out infinite;
+    }
+    .logo-text { font-family: 'Sora', sans-serif; font-weight: 700; font-size: 17px;
+      background: linear-gradient(90deg, #00C2E0, #7de8f8);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; letter-spacing: 0.05em; }
+    .logo-sub { font-size: 9px; color: var(--text-muted); letter-spacing: 0.15em; margin-top: 2px; }
+    .header-right { display: flex; align-items: center; gap: 10px; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #00ff88;
+      box-shadow: 0 0 8px #00ff88; animation: pulse 2s ease-in-out infinite; }
+    .status-text { font-size: 10px; color: var(--text-muted); letter-spacing: 0.1em; }
+    #clearBtn {
+      background: transparent; border: 1px solid var(--border); color: var(--text-muted);
+      padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 10px;
+      font-family: inherit; letter-spacing: 0.05em; transition: all 0.2s;
+    }
+    #clearBtn:hover { background: var(--cyan-dim); color: var(--cyan); border-color: var(--cyan); }
+
+    /* ---- BODY ---- */
+    .body-wrap { display: flex; flex: 1; overflow: hidden; }
+
+    /* ---- SIDEBAR ---- */
+    #sidebar {
+      width: 240px; flex-shrink: 0;
+      border-right: 1px solid var(--border);
+      background: var(--bg-sidebar);
+      backdrop-filter: blur(12px);
+      display: flex; flex-direction: column;
+      overflow-y: auto; overflow-x: hidden;
+      transition: width 0.3s, transform 0.3s;
+    }
+    #sidebar::-webkit-scrollbar { width: 3px; }
+    #sidebar::-webkit-scrollbar-thumb { background: #1e4d6b; border-radius: 3px; }
+
+    .sidebar-title { padding: 14px 14px 6px;
+      font-family: 'Sora', sans-serif; font-size: 10px; color: var(--text-muted);
+      letter-spacing: 0.15em; font-weight: 600; }
+
+    .cat-wrap { padding: 0 10px 10px; display: flex; flex-wrap: wrap; gap: 5px; }
+    .cat-btn {
+      padding: 3px 9px; border-radius: 20px; font-size: 9px; cursor: pointer;
+      border: 1px solid var(--border); background: transparent;
+      color: var(--text-muted); font-family: inherit; letter-spacing: 0.05em;
+      transition: all 0.2s;
+    }
+    .cat-btn:hover, .cat-btn.active {
+      background: var(--cyan-dim); color: var(--cyan); border-color: var(--cyan);
+    }
+
+    .qa-list { padding: 0 8px 12px; display: flex; flex-direction: column; gap: 5px; }
+    .qa-btn {
+      background: rgba(13,27,42,0.6); border: 1px solid var(--border-mid);
+      border-radius: 8px; padding: 9px 11px; cursor: pointer; text-align: left;
+      color: #a0c4d8; font-size: 11px; display: flex; align-items: center; gap: 8px;
+      transition: all 0.2s; font-family: inherit; width: 100%;
+      animation: fadeIn 0.3s ease both;
+    }
+    .qa-btn:hover { background: var(--cyan-faint); border-color: rgba(0,194,224,0.4); transform: translateX(2px); }
+    .qa-btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+    .qa-icon { font-size: 14px; flex-shrink: 0; }
+
+    .sidebar-tip {
+      margin: 0 10px 14px; padding: 10px;
+      border-radius: 8px; background: rgba(0,194,224,0.04);
+      border: 1px solid var(--border); font-size: 10px; color: var(--text-muted); line-height: 1.6;
+    }
+    .sidebar-tip strong { color: var(--cyan); }
+
+    /* Mobile sidebar toggle */
+    #sidebarToggle {
+      display: none; background: transparent; border: 1px solid var(--border);
+      color: var(--cyan); padding: 5px 10px; border-radius: 6px; cursor: pointer;
+      font-size: 14px; margin-right: 4px;
+    }
+
+    /* ---- CHAT AREA ---- */
+    .chat-wrap { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-width: 0; }
+
+    #messages {
+      flex: 1; overflow-y: auto; padding: 20px 22px;
+      display: flex; flex-direction: column; gap: 0;
+    }
+    #messages::-webkit-scrollbar { width: 4px; }
+    #messages::-webkit-scrollbar-thumb { background: #1e4d6b; border-radius: 4px; }
+
+    .msg-row { display: flex; gap: 10px; margin-bottom: 18px; align-items: flex-start; animation: fadeIn 0.3s ease both; }
+    .msg-row.user { flex-direction: row-reverse; }
+    .avatar {
+      width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+      display: flex; align-items: center; justify-content: center; font-size: 15px;
+    }
+    .avatar.bot { background: linear-gradient(135deg, #1a3a52, #0D2B3E); border: 1.5px solid #1e4d6b; }
+    .avatar.user-av { background: linear-gradient(135deg, #00C2E0, #0077A8); border: 1.5px solid #00C2E0;
+      box-shadow: 0 0 10px rgba(0,194,224,0.25); }
+
+    .bubble {
+      max-width: 72%; padding: 12px 16px;
+      font-size: 13px; line-height: 1.75; color: var(--text-main);
+      white-space: pre-wrap; word-break: break-word;
+    }
+    .bubble.bot-bubble {
+      background: var(--bg-card); border: 1px solid var(--border-mid);
+      border-radius: 4px 14px 14px 14px; backdrop-filter: blur(8px);
+    }
+    .bubble.user-bubble {
+      background: linear-gradient(135deg, rgba(0,194,224,0.11), rgba(0,194,224,0.05));
+      border: 1px solid rgba(0,194,224,0.25);
+      border-radius: 14px 4px 14px 14px;
+    }
+    .ts { font-size: 10px; color: var(--text-dim); margin-top: 5px; }
+    .ts.user-ts { text-align: right; }
+
+    /* Typing indicator */
+    .typing-row { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 18px; animation: fadeIn 0.3s ease both; }
+    .typing-bubble {
+      background: var(--bg-card); border: 1px solid var(--border-mid);
+      border-radius: 4px 14px 14px 14px; padding: 14px 18px;
+      display: flex; gap: 5px; align-items: center;
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--cyan); animation: pulse 1.2s ease-in-out infinite; }
+    .dot:nth-child(2) { animation-delay: 0.2s; }
+    .dot:nth-child(3) { animation-delay: 0.4s; }
+
+    /* ---- INPUT AREA ---- */
+    .input-area {
+      padding: 14px 22px 16px;
+      border-top: 1px solid var(--border);
+      background: rgba(6,14,23,0.85);
+      backdrop-filter: blur(12px);
+      flex-shrink: 0;
+    }
+    .input-row { display: flex; gap: 10px; align-items: flex-end; }
+    #chatInput {
+      flex: 1; resize: none;
+      background: rgba(13,27,42,0.9);
+      border: 1px solid rgba(0,194,224,0.2);
+      border-radius: 10px; padding: 11px 14px;
+      color: var(--text-main); font-size: 13px;
+      font-family: inherit; line-height: 1.6;
+      transition: border-color 0.2s, box-shadow 0.2s;
+      min-height: 44px; max-height: 120px;
+    }
+    #chatInput:focus { outline: none; border-color: rgba(0,194,224,0.45); box-shadow: 0 0 0 2px rgba(0,194,224,0.08); }
+    #chatInput::placeholder { color: var(--text-dim); font-size: 12px; }
+    #sendBtn {
+      width: 44px; height: 44px; border-radius: 10px; flex-shrink: 0;
+      background: linear-gradient(135deg, #00C2E0, #0077A8);
+      border: none; cursor: pointer; font-size: 18px;
+      display: flex; align-items: center; justify-content: center;
+      transition: all 0.2s; box-shadow: 0 0 12px rgba(0,194,224,0.25);
+    }
+    #sendBtn:hover { box-shadow: 0 0 20px rgba(0,194,224,0.5); transform: scale(1.05); }
+    #sendBtn:disabled { background: rgba(13,27,42,0.8); border: 1px solid var(--border); cursor: not-allowed; transform: none; box-shadow: none; }
+    .input-footer { margin-top: 7px; font-size: 10px; color: var(--text-dim); text-align: center; letter-spacing: 0.08em; }
+
+    /* Error toast */
+    #errorToast {
+      display: none; position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+      background: rgba(220,50,50,0.9); color: #fff; padding: 10px 20px;
+      border-radius: 8px; font-size: 12px; z-index: 999; backdrop-filter: blur(8px);
+      animation: fadeIn 0.3s ease;
+    }
+
+    /* Animations */
+    @keyframes pulse { 0%,100%{opacity:0.3;transform:scale(0.8)} 50%{opacity:1;transform:scale(1)} }
+    @keyframes glow { 0%,100%{box-shadow:0 0 8px rgba(0,194,224,0.3)} 50%{box-shadow:0 0 20px rgba(0,194,224,0.55)} }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+
+    /* ---- MOBILE RESPONSIVE ---- */
+    @media (max-width: 700px) {
+      #sidebar {
+        position: fixed; top: 62px; left: 0; bottom: 0; z-index: 200;
+        transform: translateX(-100%); width: 240px;
+        border-right: 1px solid var(--border);
+      }
+      #sidebar.open { transform: translateX(0); box-shadow: 4px 0 24px rgba(0,0,0,0.5); }
+      #sidebarToggle { display: flex; }
+      .bubble { max-width: 85%; font-size: 12px; }
+      #messages { padding: 14px 14px; }
+      .input-area { padding: 10px 14px 12px; }
+      .logo-sub { display: none; }
+    }
+  </style>
+</head>
+<body>
+<div id="app">
+  <!-- HEADER -->
+  <header>
+    <div class="header-left">
+      <button id="sidebarToggle" onclick="toggleSidebar()">☰</button>
+      <div class="logo-icon">🔐</div>
+      <div>
+        <div class="logo-text">IAMGPT</div>
+        <div class="logo-sub">IAM · OKTA · ENTRA ID · AD · SAILPOINT</div>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="status-dot"></div>
+      <span class="status-text">AGENT ONLINE</span>
+      <button id="clearBtn" onclick="clearChat()">CLEAR</button>
+    </div>
+  </header>
+
+  <div class="body-wrap">
+    <!-- SIDEBAR -->
+    <div id="sidebar">
+      <div class="sidebar-title">⚡ QUICK ACTIONS</div>
+      <div class="cat-wrap" id="catWrap"></div>
+      <div class="qa-list" id="qaList"></div>
+      <div class="sidebar-tip">
+        💡 <strong>Tip:</strong> Ask me to generate access review checklists, RBAC matrices, onboarding templates, or explain any IAM concept.
+      </div>
+    </div>
+
+    <!-- CHAT -->
+    <div class="chat-wrap">
+      <div id="messages"></div>
+      <div class="input-area">
+        <div class="input-row">
+          <textarea id="chatInput" rows="2"
+            placeholder="Ask about Okta, Active Directory, Entra ID, SailPoint, Zero Trust, PAM, SCIM..."></textarea>
+          <button id="sendBtn" onclick="sendMessage()">➤</button>
+        </div>
+        <div class="input-footer">IAMGPT · IAM Learning & Operations Agent</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="errorToast"></div>
+
+<script>
+const CATEGORIES = ["All","Okta","Active Directory","Entra ID","SailPoint","Concepts","Career"];
+const ACTIONS = [
+  { label:"Okta SSO Setup", icon:"🔐", cats:["Okta"],
+    prompt:"Walk me through setting up SAML SSO in Okta for a new application. What are the key steps and common errors to watch for?" },
+  { label:"AD OU Design", icon:"🏗️", cats:["Active Directory"],
+    prompt:"How should I design an OU structure in Active Directory for a large Indian IT company with 10,000 users across multiple BUs?" },
+  { label:"Entra ID PIM", icon:"🛡️", cats:["Entra ID"],
+    prompt:"Explain Privileged Identity Management (PIM) in Microsoft Entra ID. How do I set up Just-In-Time access for Global Admin roles?" },
+  { label:"User Lifecycle", icon:"🔄", cats:["Concepts"],
+    prompt:"Design a complete user lifecycle management workflow (Joiner-Mover-Leaver) for an enterprise. What should be automated vs manual?" },
+  { label:"SailPoint ISC", icon:"⛵", cats:["SailPoint"],
+    prompt:"I'm new to SailPoint IdentityNow (ISC). How do I set up my first tenant, connect an AD source, and run an access certification?" },
+  { label:"Zero Trust", icon:"🚫", cats:["Concepts","Entra ID"],
+    prompt:"Explain Zero Trust architecture from an IAM perspective. How do Okta, Entra ID, and AD work together in a Zero Trust model?" },
+  { label:"Okta Troubleshoot", icon:"🔧", cats:["Okta"],
+    prompt:"I'm getting an 'Insufficient Privileges' error when users log into Salesforce via Okta SSO. What are the common causes and how do I fix it?" },
+  { label:"IAM Interview Prep", icon:"💼", cats:["Career"],
+    prompt:"Give me 10 top IAM interview questions asked at Infosys, Wipro, or TCS for an Assistant Manager - IAM role, with detailed answers." },
+  { label:"Access Review", icon:"✅", cats:["Active Directory","Concepts"],
+    prompt:"How do I conduct a quarterly user access review for Active Directory groups? Give me a step-by-step process and a checklist." },
+  { label:"RBAC Design", icon:"📊", cats:["Concepts"],
+    prompt:"Help me design an RBAC matrix for a banking environment. What are the key roles and access levels I should define?" },
+  { label:"SCIM Provisioning", icon:"⚡", cats:["Okta","Concepts"],
+    prompt:"Explain SCIM provisioning in Okta. How does automated provisioning work between Okta and a target app like ServiceNow or Salesforce?" },
+  { label:"Kerberos Flow", icon:"🎟️", cats:["Active Directory","Concepts"],
+    prompt:"Explain the Kerberos authentication flow step by step. How does a user authenticate to a Windows domain using Kerberos tickets?" },
+];
+
+let messages = [];
+let loading = false;
+let activeCategory = "All";
+
+function init() {
+  // Build category buttons
+  const catWrap = document.getElementById("catWrap");
+  CATEGORIES.forEach(cat => {
+    const btn = document.createElement("button");
+    btn.className = "cat-btn" + (cat === "All" ? " active" : "");
+    btn.textContent = cat;
+    btn.onclick = () => selectCategory(cat);
+    catWrap.appendChild(btn);
+  });
+
+  renderQAList();
+  appendMessage("assistant",
+    "Hello! I'm IAMGPT — your specialized IAM AI Agent. 🔐\n\nI can help you with Active Directory, Okta, Microsoft Entra ID, SailPoint, and all things Identity & Access Management — no code required.\n\nUse the quick actions on the left or type your question below. What IAM challenge can I help you with today?"
+  );
+
+  const input = document.getElementById("chatInput");
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  });
+  input.addEventListener("input", () => {
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight, 120) + "px";
+  });
+}
+
+function selectCategory(cat) {
+  activeCategory = cat;
+  document.querySelectorAll(".cat-btn").forEach(b => {
+    b.classList.toggle("active", b.textContent === cat);
+  });
+  renderQAList();
+}
+
+function renderQAList() {
+  const list = document.getElementById("qaList");
+  list.innerHTML = "";
+  const filtered = activeCategory === "All"
+    ? ACTIONS
+    : ACTIONS.filter(a => a.cats.includes(activeCategory));
+
+  filtered.forEach((a, i) => {
+    const btn = document.createElement("button");
+    btn.className = "qa-btn";
+    btn.style.animationDelay = (i * 0.04) + "s";
+    btn.innerHTML = `<span class="qa-icon">${a.icon}</span><span>${a.label}</span>`;
+    btn.onclick = () => { sendMessage(a.prompt); if (window.innerWidth <= 700) closeSidebar(); };
+    list.appendChild(btn);
+  });
+}
+
+function setQADisabled(disabled) {
+  document.querySelectorAll(".qa-btn").forEach(b => b.disabled = disabled);
+}
+
+function getTime() {
+  return new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+function appendMessage(role, content) {
+  messages.push({ role, content });
+  const container = document.getElementById("messages");
+  const row = document.createElement("div");
+  row.className = "msg-row" + (role === "user" ? " user" : "");
+
+  const isUser = role === "user";
+  row.innerHTML = `
+    <div class="avatar ${isUser ? "user-av" : "bot"}">${isUser ? "👤" : "🤖"}</div>
+    <div>
+      <div class="bubble ${isUser ? "user-bubble" : "bot-bubble"}">${escapeHtml(content)}</div>
+      <div class="ts ${isUser ? "user-ts" : ""}">${getTime()}</div>
+    </div>`;
+  container.appendChild(row);
+  container.scrollTop = container.scrollHeight;
+}
+
+function showTyping() {
+  const container = document.getElementById("messages");
+  const row = document.createElement("div");
+  row.className = "typing-row"; row.id = "typingIndicator";
+  row.innerHTML = `
+    <div class="avatar bot">🤖</div>
+    <div class="typing-bubble">
+      <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+    </div>`;
+  container.appendChild(row);
+  container.scrollTop = container.scrollHeight;
+}
+
+function hideTyping() {
+  const t = document.getElementById("typingIndicator");
+  if (t) t.remove();
+}
+
+function showError(msg) {
+  const toast = document.getElementById("errorToast");
+  toast.textContent = "⚠️ " + msg;
+  toast.style.display = "block";
+  setTimeout(() => { toast.style.display = "none"; }, 4000);
+}
+
+function escapeHtml(s) {
+  return s.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+async function sendMessage(text) {
+  if (loading) return;
+  const input = document.getElementById("chatInput");
+  const userText = text || input.value.trim();
+  if (!userText) return;
+
+  if (!text) { input.value = ""; input.style.height = "auto"; }
+  loading = true;
+  setQADisabled(true);
+  document.getElementById("sendBtn").disabled = true;
+
+  appendMessage("user", userText);
+  showTyping();
+
+  try {
+    const apiMessages = messages.slice(-20).map(m => ({ role: m.role, content: m.content }));
+    // Remove the last message we just added (will be re-sent)
+    // Actually keep all messages including the one just added
+    const response = await fetch("/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: apiMessages }),
+    });
+
+    const data = await response.json();
+    hideTyping();
+
+    if (data.error) { showError(data.error); }
+    else { appendMessage("assistant", data.reply); }
+  } catch (err) {
+    hideTyping();
+    showError("Connection error. Is the server running?");
+  } finally {
+    loading = false;
+    setQADisabled(false);
+    document.getElementById("sendBtn").disabled = false;
+    document.getElementById("chatInput").focus();
+  }
+}
+
+function clearChat() {
+  messages = [];
+  document.getElementById("messages").innerHTML = "";
+  appendMessage("assistant", "Chat cleared. Ready for your next IAM question! 🔐");
+}
+
+function toggleSidebar() {
+  document.getElementById("sidebar").classList.toggle("open");
+}
+function closeSidebar() {
+  document.getElementById("sidebar").classList.remove("open");
+}
+
+// Close sidebar on outside click (mobile)
+document.addEventListener("click", e => {
+  const sidebar = document.getElementById("sidebar");
+  const toggle = document.getElementById("sidebarToggle");
+  if (window.innerWidth <= 700 && sidebar.classList.contains("open") &&
+      !sidebar.contains(e.target) && e.target !== toggle) {
+    closeSidebar();
+  }
+});
+
+init();
+</script>
+</body>
+</html>
