@@ -7,6 +7,45 @@ const os = require("os");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Public demo protection: limits accidental abuse without storing personal data.
+const WINDOW_MS = 60 * 60 * 1000; // 1 hour
+const MAX_REQUESTS_PER_WINDOW = Number(process.env.MAX_REQUESTS_PER_HOUR || 20);
+const MIN_REQUEST_GAP_MS = Number(process.env.MIN_REQUEST_GAP_MS || 4000);
+const usage = new Map();
+
+function getClientKey(req) {
+  const forwarded = req.headers["x-forwarded-for"];
+  return (forwarded ? forwarded.split(",")[0] : req.ip || "unknown").trim();
+}
+
+function checkPublicDemoLimit(req) {
+  const key = getClientKey(req);
+  const now = Date.now();
+  let item = usage.get(key);
+  if (!item || now - item.windowStart >= WINDOW_MS) {
+    item = { windowStart: now, count: 0, lastRequest: 0 };
+  }
+  if (now - item.lastRequest < MIN_REQUEST_GAP_MS) {
+    return { allowed: false, status: 429, retryAfter: Math.ceil((MIN_REQUEST_GAP_MS - (now - item.lastRequest))/1000),
+      message: "Please wait a few seconds before sending another question." };
+  }
+  if (item.count >= MAX_REQUESTS_PER_WINDOW) {
+    return { allowed: false, status: 429, retryAfter: Math.ceil((WINDOW_MS - (now - item.windowStart))/1000),
+      message: "You’ve reached the IAMGPT public demo limit for this hour. Please try again later." };
+  }
+  item.count += 1;
+  item.lastRequest = now;
+  usage.set(key, item);
+  return { allowed: true };
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, item] of usage.entries()) {
+    if (now - item.windowStart > WINDOW_MS * 2) usage.delete(key);
+  }
+}, WINDOW_MS).unref();
+
 app.use(express.json());
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -33,6 +72,12 @@ Keep responses practical, concise, and relevant to real-world IAM operations. Us
 
 // Chat endpoint — uses Groq API (Free, works in India)
 app.post("/api/chat", async (req, res) => {
+  const limit = checkPublicDemoLimit(req);
+  if (!limit.allowed) {
+    res.set("Retry-After", String(limit.retryAfter));
+    return res.status(limit.status).json({ error: limit.message, code: "DEMO_RATE_LIMIT" });
+  }
+
   const apiKey = process.env.GROQ_API_KEY;
   if (!apiKey) {
     return res.status(500).json({ error: "GROQ_API_KEY not set in .env file. Please add it." });
@@ -47,9 +92,9 @@ app.post("/api/chat", async (req, res) => {
 
     const groqMessages = [
       { role: "system", content: SYSTEM_PROMPT },
-      ...messages.map(m => ({
+      ...messages.slice(-6).map(m => ({
         role: m.role === "assistant" ? "assistant" : "user",
-        content: m.content
+        content: String(m.content || "").slice(0, 6000)
       }))
     ];
 
@@ -62,7 +107,7 @@ app.post("/api/chat", async (req, res) => {
       body: JSON.stringify({
         model: "openai/gpt-oss-20b",
         messages: groqMessages,
-        max_completion_tokens: 1500,
+        max_completion_tokens: 800,
         include_reasoning: false,
         temperature: 0.7,
       }),
@@ -71,8 +116,21 @@ app.post("/api/chat", async (req, res) => {
     const data = await response.json();
 
     if (!response.ok || data.error) {
-      const message = data?.error?.message || `Groq API request failed with status ${response.status}.`;
-      return res.status(response.status >= 400 && response.status < 600 ? response.status : 502).json({ error: message });
+      console.error("Groq API error:", response.status, data?.error?.message || data);
+
+      if (response.status === 429) {
+        const retryAfter = response.headers.get("retry-after");
+        if (retryAfter) res.set("Retry-After", retryAfter);
+        return res.status(429).json({
+          code: "AI_CAPACITY",
+          error: "IAMGPT is experiencing high demand right now. Please try again in a few minutes. Thanks for checking out IAMGPT! 🔐"
+        });
+      }
+
+      return res.status(502).json({
+        code: "AI_SERVICE_ERROR",
+        error: "IAMGPT is temporarily unable to generate a response. Please try again shortly."
+      });
     }
 
     const reply = data.choices?.[0]?.message?.content || "No response received.";

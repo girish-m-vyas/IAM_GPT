@@ -443,7 +443,7 @@ async function sendMessage(text) {
   showTyping();
 
   try {
-    const apiMessages = messages.slice(-20).map(m => ({ role: m.role, content: m.content }));
+    const apiMessages = messages.slice(-6).map(m => ({ role: m.role, content: m.content }));
     // Remove the last message we just added (will be re-sent)
     // Actually keep all messages including the one just added
     const response = await fetch("/api/chat", {
@@ -455,8 +455,17 @@ async function sendMessage(text) {
     const data = await response.json();
     hideTyping();
 
-    if (data.error) { showError(data.error); }
-    else { appendMessage("assistant", data.reply); }
+    if (!response.ok || data.error) {
+      if (response.status === 429 && data.code === "AI_CAPACITY") {
+        appendMessage("assistant", "### IAMGPT is experiencing high demand\n\nOur AI capacity is temporarily busy. Please try again in a few minutes.\n\nThanks for checking out IAMGPT! 🔐");
+      } else if (response.status === 429) {
+        appendMessage("assistant", data.error || "Please wait a moment before sending another question.");
+      } else {
+        showError(data.error || "IAMGPT is temporarily unavailable. Please try again.");
+      }
+    } else {
+      appendMessage("assistant", data.reply);
+    }
   } catch (err) {
     hideTyping();
     showError("Connection error. Is the server running?");
